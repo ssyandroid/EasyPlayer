@@ -9,7 +9,7 @@
 3、音频支持AAC、G711
 
 ##EasyPlayer##
-该工程是从[EasyPlayer](https://raw.githubusercontent.com/EasyDarwin/EasyPlayer/master/README.md)独立出来的。后面仅维护本工程,Android,[EasyPlayer](https://raw.githubusercontent.com/EasyDarwin/EasyPlayer/master/README.md)里面的安卓部分不再单独维护。
+该工程是从[EasyPlayer](https://raw.githubusercontent.com/EasyDarwin/EasyPlayer/master/README.md)独立出来的。后面仅维护本工程,[EasyPlayer](https://raw.githubusercontent.com/EasyDarwin/EasyPlayer/master/README.md)里面的安卓部分不再单独维护。
 
 ##应用截图##
 ![播放界面](https://raw.githubusercontent.com/jiaozebo/EasyPlayer/master/EasyPlayer/screenshot/single_video.jpg?raw=true)
