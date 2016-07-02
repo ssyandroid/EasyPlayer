@@ -5,30 +5,47 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Environment;
+import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.app.ActivityOptionsCompat;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.Toolbar;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
+import com.bumptech.glide.signature.StringSignature;
 import com.umeng.analytics.MobclickAgent;
 
 import org.esaydarwin.rtsp.player.R;
 import org.json.JSONArray;
 import org.json.JSONException;
 
+import java.io.File;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.UUID;
+
 public class PlaylistActivity extends AppCompatActivity implements View.OnClickListener, View.OnLongClickListener {
 
+    private static final int REQUEST_PLAY = 1000;
     private RecyclerView mRecyclerView;
     private JSONArray mArray;
+    private int mPos;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,13 +67,22 @@ public class PlaylistActivity extends AppCompatActivity implements View.OnClickL
         mRecyclerView.setAdapter(new RecyclerView.Adapter() {
             @Override
             public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-                return new PlayListViewHolder(getLayoutInflater().inflate(android.R.layout.simple_list_item_1, parent, false));
+                return new PlayListViewHolder(getLayoutInflater().inflate(R.layout.video_source_item, parent, false));
             }
 
             @Override
             public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
                 PlayListViewHolder plvh = (PlayListViewHolder) holder;
-                plvh.mTextView.setText(mArray.optString(position));
+                try {
+                    String url = mArray.getString(position);
+                    plvh.mTextView.setText(url);
+                    File file = url2localPosterFile(PlaylistActivity.this, url);
+                    Glide.with(PlaylistActivity.this).load(file).signature(new StringSignature(UUID.randomUUID().toString())).placeholder(R.drawable.placeholder).centerCrop().into(plvh.mImageView);
+                } catch (Exception e) {
+                    plvh.mTextView.setText("解析错误");
+                    e.printStackTrace();
+                    plvh.mImageView.setImageResource(R.drawable.placeholder);
+                }
             }
 
             @Override
@@ -65,9 +91,22 @@ public class PlaylistActivity extends AppCompatActivity implements View.OnClickL
             }
         });
 
-        if (savedInstanceState == null){
+        if (savedInstanceState == null) {
             startActivity(new Intent(this, SplashActivity.class));
         }
+    }
+
+    public static File url2localPosterFile(Context context, String url) {
+        MessageDigest messageDigest = null;
+        try {
+            messageDigest = MessageDigest.getInstance("MD5");
+            byte[] result = messageDigest.digest(url.getBytes());
+            return new File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), Base64.encodeToString(result, Base64.NO_WRAP | Base64.URL_SAFE));
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            return null;
+        }
+
     }
 
     public void onResume() {
@@ -126,7 +165,13 @@ public class PlaylistActivity extends AppCompatActivity implements View.OnClickL
                             @Override
                             public void onClick(DialogInterface dialogInterface, int i) {
                                 try {
-                                    mArray.put(pos, null);
+                                    ArrayList<String> array = new ArrayList<>();
+                                    for (i = 0; i < mArray.length(); i++) {
+                                        if (pos != i) {
+                                            array.add(mArray.getString(i));
+                                        }
+                                    }
+                                    mArray = new JSONArray(array);
                                     final SharedPreferences preferences = getPreferences(MODE_PRIVATE);
                                     preferences.edit().putString("play_list", String.valueOf(mArray)).apply();
                                     mRecyclerView.getAdapter().notifyItemRemoved(pos);
@@ -145,11 +190,12 @@ public class PlaylistActivity extends AppCompatActivity implements View.OnClickL
     class PlayListViewHolder extends RecyclerView.ViewHolder {
 
         private final TextView mTextView;
+        private final ImageView mImageView;
 
         public PlayListViewHolder(View itemView) {
             super(itemView);
-            itemView.setBackgroundResource(android.R.drawable.list_selector_background);
             mTextView = (TextView) itemView.findViewById(android.R.id.text1);
+            mImageView = (ImageView) itemView.findViewById(android.R.id.icon1);
             itemView.setOnClickListener(PlaylistActivity.this);
             itemView.setOnLongClickListener(PlaylistActivity.this);
             itemView.setTag(this);
@@ -167,7 +213,8 @@ public class PlaylistActivity extends AppCompatActivity implements View.OnClickL
             if (!TextUtils.isEmpty(playUrl)) {
                 Intent i = new Intent(PlaylistActivity.this, PlayActivity.class);
                 i.putExtra("play_url", playUrl);
-                startActivity(i);
+                mPos = pos;
+                ActivityCompat.startActivityForResult(this, i, REQUEST_PLAY, ActivityOptionsCompat.makeSceneTransitionAnimation(this, holder.mImageView, "video_animation").toBundle());
             }
         }
     }
@@ -185,8 +232,6 @@ public class PlaylistActivity extends AppCompatActivity implements View.OnClickL
             final int hori = (int) getResources().getDimension(R.dimen.activity_horizontal_margin);
             final int verti = (int) getResources().getDimension(R.dimen.activity_vertical_margin);
             edit.setPadding(hori, verti, hori, verti);
-            edit.setText("rtsp://.sdp");
-            edit.setSelection("rtsp://".length());
             final AlertDialog dlg = new AlertDialog.Builder(this).setView(edit).setTitle("请输入播放地址").setPositiveButton("确定", new DialogInterface.OnClickListener() {
                 @Override
                 public void onClick(DialogInterface dialogInterface, int i) {
@@ -211,5 +256,11 @@ public class PlaylistActivity extends AppCompatActivity implements View.OnClickL
             dlg.show();
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        mRecyclerView.getAdapter().notifyItemChanged(mPos);
     }
 }

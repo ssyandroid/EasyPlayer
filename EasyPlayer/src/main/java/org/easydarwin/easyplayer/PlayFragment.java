@@ -1,26 +1,51 @@
 package org.easydarwin.easyplayer;
 
 
+import android.animation.Animator;
+import android.app.Activity;
 import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
+import android.graphics.drawable.BitmapDrawable;
+import android.media.MediaScannerConnection;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.ResultReceiver;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
-import android.support.v4.view.GestureDetectorCompat;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Surface;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.view.ViewPropertyAnimator;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
+import android.widget.ImageView;
 import android.widget.Toast;
+
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
+import com.bumptech.glide.load.resource.drawable.GlideDrawable;
+import com.bumptech.glide.request.animation.GlideAnimation;
+import com.bumptech.glide.request.target.ImageViewTarget;
+import com.bumptech.glide.request.target.SimpleTarget;
+import com.bumptech.glide.signature.StringSignature;
 
 import org.easydarwin.video.EasyRTSPClient;
 import org.easydarwin.video.RTSPClient;
+import org.esaydarwin.rtsp.player.BuildConfig;
 import org.esaydarwin.rtsp.player.R;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.UUID;
 
 
 /**
@@ -33,6 +58,7 @@ public class PlayFragment extends Fragment implements TextureView.SurfaceTexture
     // the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
     private static final String ARG_PARAM1 = "param1";
     private static final String ARG_PARAM2 = "param2";
+    private static final String TAG = "PlayFragment";
 
     // TODO: Rename and change types of parameters
     private String mUrl;
@@ -42,9 +68,21 @@ public class PlayFragment extends Fragment implements TextureView.SurfaceTexture
     private ResultReceiver mResultReceiver;
     private int mWidth;
     private int mHeight;
+    private View.OnLayoutChangeListener listener;
+    private TextureView surfaceView;
+    private ImageView cover;
 
-    public PlayFragment() {
-        // Required empty public constructor
+    public void setSelected(boolean selected) {
+        surfaceView.animate().scaleX(selected ? 0.9f : 1.0f);
+        surfaceView.animate().scaleY(selected ? 0.9f : 1.0f);
+        surfaceView.animate().alpha(selected ? 0.7f : 1.0f);
+    }
+
+    public static class ReverseInterpolator extends AccelerateDecelerateInterpolator {
+        @Override
+        public float getInterpolation(float paramFloat) {
+            return super.getInterpolation(1.0f - paramFloat);
+        }
     }
 
     /**
@@ -75,17 +113,38 @@ public class PlayFragment extends Fragment implements TextureView.SurfaceTexture
     }
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+    public View onCreateView(LayoutInflater inflater, final ViewGroup container,
                              Bundle savedInstanceState) {
         // Inflate the layout for this fragment
-        return inflater.inflate(R.layout.fragment_play, container, false);
+        final View view = inflater.inflate(R.layout.fragment_play, container, false);
+        view.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                PlayActivity activity = (PlayActivity) getActivity();
+                activity.onPlayFragmentClicked(PlayFragment.this);
+            }
+        });
+
+        cover = (ImageView) view.findViewById(R.id.surface_cover);
+//        Glide.with(this).load(PlaylistActivity.url2localPosterFile(getActivity(), mUrl)).diskCacheStrategy(DiskCacheStrategy.NONE).placeholder(R.drawable.placeholder).into(new ImageViewTarget<GlideDrawable>(cover) {
+//            @Override
+//            protected void setResource(GlideDrawable resource) {
+//                int width = resource.getIntrinsicWidth();
+//                int height = resource.getIntrinsicHeight();
+//                fixPlayerRatio(view, container.getWidth(), container.getHeight(), width, height);
+//                cover.setImageDrawable(resource);
+//            }
+//        });
+
+        Glide.with(this).load(PlaylistActivity.url2localPosterFile(getActivity(), mUrl)).signature(new StringSignature(UUID.randomUUID().toString())).fitCenter().into(cover);
+        return view;
     }
 
     @Override
     public void onViewCreated(final View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-
-        final TextureView surfaceView = (TextureView) view.findViewById(R.id.surface_view);
+        surfaceView = (TextureView) view.findViewById(R.id.surface_view);
+        surfaceView.setOpaque(false);
         surfaceView.setSurfaceTextureListener(this);
         mResultReceiver = new ResultReceiver(new Handler()) {
             @Override
@@ -94,30 +153,97 @@ public class PlayFragment extends Fragment implements TextureView.SurfaceTexture
                 if (resultCode == EasyRTSPClient.RESULT_VIDEO_DISPLAYED) {
 //                    Toast.makeText(PlayActivity.this, "视频正在播放了", Toast.LENGTH_SHORT).show();
                     view.findViewById(android.R.id.progress).setVisibility(View.GONE);
+                    surfaceView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (mWidth != 0 && mHeight != 0) {
+                                Bitmap e = Bitmap.createBitmap(mWidth, mHeight, Bitmap.Config.ARGB_8888);
+                                surfaceView.getBitmap(e);
+                                File f = PlaylistActivity.url2localPosterFile(surfaceView.getContext(), mUrl);
+                                saveBitmapInFile(f.getPath(), e);
+                                e.recycle();
+                            }
+                        }
+                    });
+                    cover.setVisibility(View.GONE);
                 } else if (resultCode == EasyRTSPClient.RESULT_VIDEO_SIZE) {
                     mWidth = resultData.getInt(EasyRTSPClient.EXTRA_VIDEO_WIDTH);
                     mHeight = resultData.getInt(EasyRTSPClient.EXTRA_VIDEO_HEIGHT);
                     if (!isLandscape()) {
 
-                        fixPlayerRatio(surfaceView, getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels);
+                        ViewGroup parent = (ViewGroup) view.getParent();
+                        parent.addOnLayoutChangeListener(listener);
+                        fixPlayerRatio(view, parent.getWidth(), parent.getHeight());
                     }
                 } else if (resultCode == EasyRTSPClient.RESULT_TIMEOUT) {
                     Toast.makeText(getActivity(), "试播时间到", Toast.LENGTH_SHORT).show();
                 }
             }
         };
+
+        listener = new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                Log.d(TAG, String.format("onLayoutChange left:%d,top:%d,right:%d,bottom:%d->oldLeft:%d,oldTop:%d,oldRight:%d,oldBottom:%d", left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom));
+                if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                    if (!isLandscape()) {
+                        fixPlayerRatio(view, right - left, bottom - top);
+                    } else {
+                        PlayActivity activity = (PlayActivity) getActivity();
+                        if (!activity.multiWindows()) {
+                            view.getLayoutParams().width = ViewGroup.LayoutParams.MATCH_PARENT;
+                            view.getLayoutParams().height = ViewGroup.LayoutParams.MATCH_PARENT;
+                            view.requestLayout();
+                        } else {
+                            fixPlayerRatio(view, right - left, bottom - top);
+                        }
+                    }
+                }
+            }
+        };
+        ViewGroup parent = (ViewGroup) view.getParent();
+        parent.addOnLayoutChangeListener(listener);
     }
 
+    private static void saveBitmapInFile(final String path, Bitmap bitmap) {
+        FileOutputStream fos = null;
+        try {
+            fos = new FileOutputStream(path);
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos);
+        } catch (IOException var18) {
+            var18.printStackTrace();
+        } catch (OutOfMemoryError var19) {
+            var19.printStackTrace();
+        } finally {
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (IOException var16) {
+                    var16.printStackTrace();
+                }
+            }
+
+        }
+
+    }
+
+    @Override
+    public void onDestroyView() {
+        ViewGroup parent = (ViewGroup) getView().getParent();
+        parent.removeOnLayoutChangeListener(listener);
+        super.onDestroyView();
+    }
 
     private boolean isLandscape() {
         return getActivity().getRequestedOrientation() == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE || getActivity().getRequestedOrientation() == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
     }
 
-    private void fixPlayerRatio(View renderView, int maxWidth, int maxHeight) {
-
+    private void fixPlayerRatio(View renderView, int maxWidth, int maxHeight, int width, int height) {
+        if (width == 0 || height == 0) {
+            return;
+        }
         int widthSize = maxWidth;
         int heightSize = maxHeight;
-        int width = mWidth, height = mHeight;
         float aspectRatio = width * 1.0f / height;
 
 
@@ -131,6 +257,10 @@ public class PlayFragment extends Fragment implements TextureView.SurfaceTexture
         renderView.getLayoutParams().width = width;
         renderView.getLayoutParams().height = height;
         renderView.requestLayout();
+    }
+
+    private void fixPlayerRatio(View renderView, int maxWidth, int maxHeight) {
+        fixPlayerRatio(renderView, maxWidth, maxHeight, mWidth, mHeight);
     }
 
     private void startRending(Surface surface) {
@@ -159,6 +289,7 @@ public class PlayFragment extends Fragment implements TextureView.SurfaceTexture
 
     @Override
     public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-
+        if (BuildConfig.DEBUG)
+            Log.d(TAG, String.format("onSurfaceTextureUpdated [%s]", surface));
     }
 }

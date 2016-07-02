@@ -1,11 +1,14 @@
 package org.easydarwin.easyplayer;
 
+import android.animation.LayoutTransition;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -38,6 +41,9 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.request.animation.GlideAnimation;
+import com.bumptech.glide.request.target.SimpleTarget;
 import com.umeng.analytics.MobclickAgent;
 
 import org.easydarwin.video.EasyRTSPClient;
@@ -48,110 +54,182 @@ import org.json.JSONException;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+
 public class PlayActivity extends AppCompatActivity {
 
-    private GestureDetectorCompat mDetector;
+    private LinearLayout container;
 
-    class MyGestureListener extends GestureDetector.SimpleOnGestureListener {
-        private static final String DEBUG_TAG = "Gestures";
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        String url = getIntent().getStringExtra("play_url");
+        if (TextUtils.isEmpty(url)) {
+            finish();
+            return;
+        }
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        @Override
-        public boolean onDown(MotionEvent event) {
-
-            return true;
+        setContentView(R.layout.activity_main);
+        container = (LinearLayout) findViewById(R.id.player_container);
+        container.setLayoutTransition(new LayoutTransition());
+        if (savedInstanceState == null) {
+            addVideoSource(url);
         }
 
-        @Override
-        public boolean onDoubleTap(MotionEvent motionEvent) {
-            setRequestedOrientation((getRequestedOrientation() == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || getRequestedOrientation() == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) ?
-                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-            return true;
-        }
-
-        @Override
-        public boolean onSingleTapConfirmed(MotionEvent e) {
-
-            new AlertDialog.Builder(PlayActivity.this).setTitle("新的播放窗口").setItems(new CharSequence[]{"选取历史播放记录", "手动输入视频源"}, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    if (which == 0) {
-                        final SharedPreferences preferences = getSharedPreferences("PlaylistActivity", MODE_PRIVATE);
-                        JSONArray mArray;
-                        try {
-                            mArray = new JSONArray(preferences.getString("play_list", "[\"rtsp://121.41.73.249/1001_home.sdp\"]"));
-                        } catch (JSONException e) {
-                            e.printStackTrace();
-                            mArray = new JSONArray();
-                        }
-                        final CharSequence[] array = new CharSequence[mArray.length()];
-                        if (array.length == 0) {
-                            Toast.makeText(PlayActivity.this, "没有历史播放记录", Toast.LENGTH_SHORT).show();
-                            return;
-                        }
-                        for (int i = 0; i < array.length; i++) {
-                            array[i] = mArray.optString(i);
-                        }
-                        new AlertDialog.Builder(PlayActivity.this).setTitle("新的播放窗口").setItems(array, new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                addVideoSource(String.valueOf(array[which]));
-                            }
-                        }).setNegativeButton(android.R.string.cancel, null).show();
-                    } else {
-                        final EditText edit = new EditText(PlayActivity.this);
-                        final int hori = (int) getResources().getDimension(R.dimen.activity_horizontal_margin);
-                        final int verti = (int) getResources().getDimension(R.dimen.activity_vertical_margin);
-                        edit.setPadding(hori, verti, hori, verti);
-                        edit.setText("rtsp://.sdp");
-                        edit.setSelection("rtsp://".length());
-                        final AlertDialog dlg = new AlertDialog.Builder(PlayActivity.this).setView(edit).setTitle("请输入播放地址").setPositiveButton("确定", new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialogInterface, int i) {
-                                String url = String.valueOf(edit.getText());
-                                if (TextUtils.isEmpty(url)) {
-                                    return;
-                                }
-                                final SharedPreferences preferences = getSharedPreferences("PlaylistActivity", MODE_PRIVATE);
-                                JSONArray mArray;
-                                try {
-                                    mArray = new JSONArray(preferences.getString("play_list", "[\"rtsp://121.41.73.249/1001_home.sdp\"]"));
-                                } catch (JSONException e) {
-                                    e.printStackTrace();
-                                    mArray = new JSONArray();
-                                }
-                                mArray.put(url);
-                                preferences.edit().putString("play_list", String.valueOf(mArray)).apply();
-                                addVideoSource(url);
-                            }
-                        }).setNegativeButton("取消", null).create();
-                        dlg.setOnShowListener(new DialogInterface.OnShowListener() {
-                            @Override
-                            public void onShow(DialogInterface dialogInterface) {
-                                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-                                imm.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT);
-                            }
-                        });
-                        dlg.show();
-                    }
-                }
-            }).show();
-            return true;
+        if (isLandscape()) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            container.setOrientation(LinearLayout.HORIZONTAL);
+        } else {
+            container.setOrientation(LinearLayout.VERTICAL);
         }
     }
 
+
+    /**
+     * 请求添加新播放窗口
+     */
+    public void onAddWindow() {
+        new AlertDialog.Builder(PlayActivity.this).setTitle("新的播放窗口").setItems(new CharSequence[]{"选取历史播放记录", "手动输入视频源"}, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                if (which == 0) {
+                    final SharedPreferences preferences = getSharedPreferences("PlaylistActivity", MODE_PRIVATE);
+                    JSONArray mArray;
+                    try {
+                        mArray = new JSONArray(preferences.getString("play_list", "[\"rtsp://121.41.73.249/1001_home.sdp\"]"));
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                        mArray = new JSONArray();
+                    }
+                    final CharSequence[] array = new CharSequence[mArray.length()];
+                    if (array.length == 0) {
+                        Toast.makeText(PlayActivity.this, "没有历史播放记录", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    for (int i = 0; i < array.length; i++) {
+                        array[i] = mArray.optString(i);
+                    }
+                    new AlertDialog.Builder(PlayActivity.this).setTitle("新的播放窗口").setItems(array, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            addVideoSource(String.valueOf(array[which]));
+                        }
+                    }).setNegativeButton(android.R.string.cancel, null).show();
+                } else {
+                    final EditText edit = new EditText(PlayActivity.this);
+                    final int hori = (int) getResources().getDimension(R.dimen.activity_horizontal_margin);
+                    final int verti = (int) getResources().getDimension(R.dimen.activity_vertical_margin);
+                    edit.setPadding(hori, verti, hori, verti);
+                    final AlertDialog dlg = new AlertDialog.Builder(PlayActivity.this).setView(edit).setTitle("请输入播放地址").setPositiveButton("确定", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                            String url = String.valueOf(edit.getText());
+                            if (TextUtils.isEmpty(url)) {
+                                return;
+                            }
+                            final SharedPreferences preferences = getSharedPreferences("PlaylistActivity", MODE_PRIVATE);
+                            JSONArray mArray;
+                            try {
+                                mArray = new JSONArray(preferences.getString("play_list", "[\"rtsp://121.41.73.249/1001_home.sdp\"]"));
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                                mArray = new JSONArray();
+                            }
+                            mArray.put(url);
+                            preferences.edit().putString("play_list", String.valueOf(mArray)).apply();
+                            addVideoSource(url);
+                        }
+                    }).setNegativeButton("取消", null).create();
+                    dlg.setOnShowListener(new DialogInterface.OnShowListener() {
+                        @Override
+                        public void onShow(DialogInterface dialogInterface) {
+                            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                            imm.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT);
+                        }
+                    });
+                    dlg.show();
+                }
+            }
+        }).show();
+    }
+
+    /**
+     * 增加一个视频窗口。每一个PlayFragment表示一个播放窗口,在这里会增加一个PlayFragment。
+     *
+     * @param url
+     */
     private void addVideoSource(String url) {
-        LinearLayout container = (LinearLayout) findViewById(R.id.player_container);
-        FrameLayout item = new FrameLayout(PlayActivity.this);
+        final FrameLayout item = new FrameLayout(PlayActivity.this);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         params.weight = 1;
         item.setLayoutParams(params);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+        ViewCompat.setTransitionName(item, "video_animation");
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
             item.setId(View.generateViewId());
         } else {
             item.setId(generateViewId());
         }
         container.addView(item);
         getSupportFragmentManager().beginTransaction().add(item.getId(), PlayFragment.newInstance(url, RTSPClient.TRANSTYPE_TCP)).commit();
+    }
+
+    /**
+     * 删除一个播放窗口
+     *
+     * @param id
+     */
+    public void onRemoveVideoFragment(int id) {
+        getSupportFragmentManager().beginTransaction().remove(getSupportFragmentManager().findFragmentById(id)).commit();
+        container.removeView(container.findViewById(id));
+    }
+
+    /**
+     * 播放窗口被点击,此时app会弹出一个OptionFragment,并且绑定被点击的fragment(这样就会使能删除按钮,点击删除按钮,即可把此播放窗口删除)
+     *
+     * @param fragment
+     */
+    public void onPlayFragmentClicked(PlayFragment fragment) {
+        // 被绑定的窗口,呈选中状态
+        fragment.setSelected(true);
+        getSupportFragmentManager().beginTransaction().add(android.R.id.content, VideoWindowOptionMenuFragment.newInstance(fragment.getId())).addToBackStack(null).commit();
+    }
+
+    /**
+     * 播放窗口以外的区域被点击。此时app也弹出OptionFragment,但是不绑定播放窗口。这样的话不使能删除按钮。
+     *
+     * @param view
+     */
+    public void onOpenOptionMenu(View view) {
+        getSupportFragmentManager().beginTransaction().add(android.R.id.content, VideoWindowOptionMenuFragment.newInstance(0)).addToBackStack(null).commit();
+    }
+
+    /**
+     * 删除OptionFragment
+     *
+     * @param optionFragment
+     */
+    public void onRemoveOptionMenu(VideoWindowOptionMenuFragment optionFragment) {
+        getSupportFragmentManager().beginTransaction().remove(optionFragment).commit();
+        getSupportFragmentManager().popBackStack();
+
+        // 如果之前有绑定窗口,那先反选之
+        int attachedPlayFragmentId = optionFragment.getAttachedPlayFragmentId();
+        if (attachedPlayFragmentId != 0) {
+            PlayFragment fragment = (PlayFragment) getSupportFragmentManager().findFragmentById(attachedPlayFragmentId);
+            if (fragment != null) {
+                fragment.setSelected(false);
+            }
+        }
+    }
+
+
+    /**
+     * 切换屏幕方向
+     */
+    public void onToggleOrientation() {
+        setRequestedOrientation(isLandscape() ?
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     private static final AtomicInteger sNextGeneratedId = new AtomicInteger(1);
@@ -174,55 +252,33 @@ public class PlayActivity extends AppCompatActivity {
         }
     }
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        String url = getIntent().getStringExtra("play_url");
-        if (TextUtils.isEmpty(url)) {
-            finish();
-            return;
-        }
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
-        setContentView(R.layout.activity_main);
-        LinearLayout container = (LinearLayout) findViewById(R.id.player_container);
-        if (savedInstanceState == null) {
-            addVideoSource(url);
-        }
-
-        if (isLandscape()) {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            container.setOrientation(LinearLayout.HORIZONTAL);
-        } else {
-            container.setOrientation(LinearLayout.VERTICAL);
-        }
-
-        mDetector = new GestureDetectorCompat(this, new MyGestureListener());
-    }
-
-
     private boolean isLandscape() {
-        return getRequestedOrientation() == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE || getRequestedOrientation() == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        return mDetector.onTouchEvent(event);
+        int orientation = getResources().getConfiguration().orientation;
+        return orientation == ORIENTATION_LANDSCAPE;
     }
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         LinearLayout container = (LinearLayout) findViewById(R.id.player_container);
-        if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        if (newConfig.orientation == ORIENTATION_LANDSCAPE) {
+            // 横屏,全屏状态
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            setNavVisibility(true);
+            setNavVisibility(false);
+            // 横屏情况下,播放窗口横着排开
             container.setOrientation(LinearLayout.HORIZONTAL);
         } else {
+            // 竖屏,取消全屏状态
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            setNavVisibility(false);
+            setNavVisibility(true);
+            // 竖屏情况下,播放窗口竖着排开
             container.setOrientation(LinearLayout.VERTICAL);
         }
+    }
+
+    public boolean multiWindows() {
+        LinearLayout container = (LinearLayout) findViewById(R.id.player_container);
+        return container.getChildCount() > 1;
     }
 
     public void setNavVisibility(boolean visible) {
@@ -251,14 +307,4 @@ public class PlayActivity extends AppCompatActivity {
         MobclickAgent.onPause(this);
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == R.id.add_url) {
-
-        } else if (item.getItemId() == android.R.id.home) {
-            finish();
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
-    }
 }

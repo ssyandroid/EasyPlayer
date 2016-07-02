@@ -19,7 +19,7 @@
             android:name="UMENG_APPKEY"
             android:value="5700bb7467e58ef3fd000648" />
         <meta-data
-            android:name="UMENG_CHANNEL"
+            android:name="jiaozebo@foxmail.com"
             android:value="channel" />
 
         <activity
