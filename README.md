@@ -17,3 +17,5 @@
 ![多窗口](https://raw.githubusercontent.com/jiaozebo/EasyPlayer/master/EasyPlayer/screenshot/multi_video.jpg?raw=true)
 
 ![横竖屏切换](https://raw.githubusercontent.com/jiaozebo/EasyPlayer/master/EasyPlayer/screenshot/horizontal_multi_video.jpg?raw=true)
+
+[视频演示](http://v.qq.com/page/j/x/g/j0310pv51xg.html)
