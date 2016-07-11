@@ -22,14 +22,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
-            android:height="40dp"
             android:background="@color/black_overlay"
-            android:ellipsize="end"
+            android:ellipsize="marquee"
             android:gravity="center_vertical"
+            android:maxHeight="40dp"
             android:maxLines="1"
+            android:minHeight="40dp"
             android:paddingLeft="8dp"
             android:paddingRight="8dp"
-            android:text="摄像头名称(URL)"
+            android:text="摄摄像头名称(URL)"
             android:textColor="#ffffff" />
     </FrameLayout>
 </android.support.v7.widget.CardView>
